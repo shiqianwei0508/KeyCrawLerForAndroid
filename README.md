@@ -67,3 +67,4 @@ Contributions are welcome! Feel free to fork the repository and submit pull requ
 ## Acknowledgments
 - [KimmyXYC's KeyboxChecker](https://github.com/KimmyXYC/KeyboxChecker)
 - [TrickyStore](https://github.com/5ec1cff/TrickyStore)
+- [Magniquick's KeyCrawLer](https://github.com/Magniquick/KeyCrawler)
