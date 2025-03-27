@@ -1,3 +1,5 @@
+import sys
+
 import requests
 import hashlib
 import os
@@ -11,13 +13,19 @@ from check import keybox_check as CheckValid
 # Load environment variables from .env file
 load_dotenv()
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-print(f'GITHUB_TOKEN: {GITHUB_TOKEN}')
+# 检查 GITHUB_TOKEN 是否为空
+if not GITHUB_TOKEN:
+    print("Error: GITHUB_TOKEN is not set. Please define it in your .env file.")
+    sys.exit(1)  # 使用非零退出码退出程序
+# print(f'GITHUB_TOKEN: {GITHUB_TOKEN}')
 
 # Load proxy settings
 HTTP_PROXY = os.getenv("HTTP_PROXY")
 HTTPS_PROXY = os.getenv("HTTPS_PROXY")
-print(f'HTTP_PROXY: {HTTP_PROXY}')
-print(f'HTTPS_PROXY: {HTTPS_PROXY}')
+# 检查两个变量是否同时不为空
+if HTTP_PROXY and HTTPS_PROXY:
+    print(f'HTTP_PROXY: {HTTP_PROXY}')
+    print(f'HTTPS_PROXY: {HTTPS_PROXY}')
 
 if not GITHUB_TOKEN:
     raise ValueError("GITHUB_TOKEN is not set in the .env file")
@@ -39,8 +47,8 @@ headers = {
     "Accept": "application/vnd.github.v3+json",
 }
 
-save = Path(__file__).resolve().parent / "keys"
-save.mkdir(parents=True, exist_ok=True)
+savedKeys = Path(__file__).resolve().parent / "keys"
+savedKeys.mkdir(parents=True, exist_ok=True)
 
 cache_file = Path(__file__).resolve().parent / "cache.txt"
 if not cache_file.exists():
@@ -73,11 +81,15 @@ def fetch_and_process_results(page):
                 raw_url: str = (
                     item["html_url"].replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
                 )
+
+                # print(f'raw_url: {raw_url}')
+
                 # check if the file exists in cache
                 if raw_url + "\n" in cached_urls:
                     continue
                 else:
                     cached_urls.add(raw_url + "\n")
+
                 # Fetch the file content
                 file_content = fetch_file_content(raw_url)
                 # Parse the XML
@@ -89,7 +101,7 @@ def fetch_and_process_results(page):
                 canonical_xml = etree.tostring(root, method="c14n")
                 # Hash the canonical XML
                 hash_value = hashlib.sha256(canonical_xml).hexdigest()
-                file_name_save = save / (hash_value + ".xml")
+                file_name_save = savedKeys / (hash_value + ".xml")
                 if not file_name_save.exists() and file_content and CheckValid(file_content):
                     print(f"{raw_url} is new")
                     with open(file_name_save, "wb") as f:
@@ -118,17 +130,18 @@ with open(cache_file, "w") as cache:
     cache.writelines(cached_urls)
 
 
-for file_path in save.glob("*.xml"):
+for file_path in savedKeys.glob("*.xml"):
+    print(f'Begin to CheckValid: {file_path}')
     file_content = file_path.read_text()  # Read file content as a string
-    # Run CheckValid to determine if the file is still valid
+
+    # 遍历文件并检查其有效性
     if not CheckValid(file_content):
-        # Prompt user for deletion
-        user_input = input(f"File '{file_path.name}' is no longer valid. Do you want to delete it? (y/N): ")
-        if user_input.lower() == "y":
-            try:
-                file_path.unlink()  # Delete the file
-                print(f"Deleted file: {file_path.name}")
-            except OSError as e:
-                print(f"Error deleting file {file_path.name}: {e}")
-        else:
-            print(f"Kept file: {file_path.name}")
+        try:
+            file_path.unlink()  # 自动删除无效文件
+            print(f"Deleted invalid file: {file_path.name}")
+        except OSError as e:
+            print(f"Error deleting file {file_path.name}: {e}")
+    else:
+        # 对有效文件进行打印
+        print(f"Valid file: {file_path.name}")
+
