@@ -21,8 +21,8 @@ Hacked together really quick - making it public as now I use a stock ROM.
 
 1. Clone the repository and navigate to the project directory:
    ```sh
-   git clone KeyCrawler
-   cd KeyCrawler
+   git clone https://github.com/shiqianwei0508/KeyCrawLerForAndroid.git
+   cd KeyCrawLerForAndroid
    ```
 
 2. Install the required Python libraries:
@@ -30,7 +30,7 @@ Hacked together really quick - making it public as now I use a stock ROM.
    pip install -r requirements.txt
    ```
 
-3. Create a `.env` file in the project directory and add your GitHub personal access token:
+3. Create a `.env` file in the project directory and add your [GitHub personal access token](https://github.com/settings/tokens):
    ```env
    GITHUB_TOKEN=your_personal_access_token
    ```
