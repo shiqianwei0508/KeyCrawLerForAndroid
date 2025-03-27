@@ -12,6 +12,13 @@ import os
 # 用于加载环境变量
 from dotenv import load_dotenv
 
+PUBLIC_KEYS = {
+        "google": "pem/google.pem",
+        "aosp_ec": "pem/aosp_ec.pem",
+        "aosp_rsa": "pem/aosp_rsa.pem",
+        "knox": "pem/knox.pem",
+    }
+
 # 加载环境变量
 load_dotenv()
 
@@ -98,6 +105,26 @@ def compare_keys(public_key1, public_key2):
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
 
+def verify_signature(signature_algorithm, signature, tbs_certificate, public_key):
+    rsa_algorithms = ["sha256WithRSAEncryption", "sha1WithRSAEncryption", "sha384WithRSAEncryption", "sha512WithRSAEncryption"]
+    ecdsa_algorithms = ["ecdsa-with-SHA256", "ecdsa-with-SHA1", "ecdsa-with-SHA384", "ecdsa-with-SHA512"]
+    hash_map = {
+        "sha256WithRSAEncryption": hashes.SHA256(),
+        "sha1WithRSAEncryption": hashes.SHA1(),
+        "sha384WithRSAEncryption": hashes.SHA384(),
+        "sha512WithRSAEncryption": hashes.SHA512(),
+        "ecdsa-with-SHA256": hashes.SHA256(),
+        "ecdsa-with-SHA1": hashes.SHA1(),
+        "ecdsa-with-SHA384": hashes.SHA384(),
+        "ecdsa-with-SHA512": hashes.SHA512(),
+    }
+    hash_algorithm = hash_map.get(signature_algorithm)
+    if signature_algorithm in rsa_algorithms:
+        public_key.verify(signature, tbs_certificate, padding.PKCS1v15(), hash_algorithm)
+    elif signature_algorithm in ecdsa_algorithms:
+        public_key.verify(signature, tbs_certificate, ec.ECDSA(hash_algorithm))
+    else:
+        raise ValueError("Unsupported signature algorithms")
 
 # 定义主函数，用于验证证书链及其相关的属性
 def keybox_check(certificate_text):
@@ -105,26 +132,17 @@ def keybox_check(certificate_text):
         # 获取证书数量及其内容
         pem_number = parse_number_of_certificates(certificate_text)
         pem_certificates = parse_certificates(certificate_text, pem_number)
-    except Exception as e:
-        # 解析失败时，输出错误并返回 False
-        print(f"[Keybox Check Error]: {e}")
-        return False
 
-    try:
         # 加载第一个证书（通常为叶子证书）
         certificate = x509.load_pem_x509_certificate(pem_certificates[0].encode(), default_backend())
     except Exception as e:
-        # 如果加载失败，输出错误并返回 False
         print(f"[Keybox Check Error]: {e}")
         return False
 
     # 验证证书是否在有效期范围内
-    not_valid_before = certificate.not_valid_before_utc
-    not_valid_after = certificate.not_valid_after_utc
-    current_time = datetime.now(timezone.utc)
-    is_valid = not_valid_before <= current_time <= not_valid_after
     # 如果当前时间不在有效期内，返回 False
-    if not is_valid:
+    current_time = datetime.now(timezone.utc)
+    if not (certificate.not_valid_before_utc <= current_time <= certificate.not_valid_after_utc):
         return False
 
     # 验证证书链的完整性
@@ -143,65 +161,40 @@ def keybox_check(certificate_text):
         tbs_certificate = son_certificate.tbs_certificate_bytes
         public_key = father_certificate.public_key()
         try:
-            if signature_algorithm in [
-                "sha256WithRSAEncryption",
-                "sha1WithRSAEncryption",
-                "sha384WithRSAEncryption",
-                "sha512WithRSAEncryption",
-            ]:
-                # 使用 RSA 进行验证
-                hash_algorithm = {
-                    "sha256WithRSAEncryption": hashes.SHA256(),
-                    "sha1WithRSAEncryption": hashes.SHA1(),
-                    "sha384WithRSAEncryption": hashes.SHA384(),
-                    "sha512WithRSAEncryption": hashes.SHA512(),
-                }[signature_algorithm]
-                padding_algorithm = padding.PKCS1v15()
-                public_key.verify(signature, tbs_certificate, padding_algorithm, hash_algorithm)
-            elif signature_algorithm in [
-                "ecdsa-with-SHA256",
-                "ecdsa-with-SHA1",
-                "ecdsa-with-SHA384",
-                "ecdsa-with-SHA512",
-            ]:
-                # 使用 ECDSA 进行验证
-                hash_algorithm = {
-                    "ecdsa-with-SHA256": hashes.SHA256(),
-                    "ecdsa-with-SHA1": hashes.SHA1(),
-                    "ecdsa-with-SHA384": hashes.SHA384(),
-                    "ecdsa-with-SHA512": hashes.SHA512(),
-                }[signature_algorithm]
-                padding_algorithm = ec.ECDSA(hash_algorithm)
-                public_key.verify(signature, tbs_certificate, padding_algorithm)
-            else:
-                raise ValueError("Unsupported signature algorithms")
+            verify_signature(signature_algorithm, signature, tbs_certificate, public_key)
         except Exception:
             return False
 
     # 检查根证书的公钥是否可信
     root_certificate = x509.load_pem_x509_certificate(pem_certificates[-1].encode(), default_backend())
     root_public_key = root_certificate.public_key()
-    google_public_key = load_public_key_from_file("pem/google.pem")
-    aosp_ec_public_key = load_public_key_from_file("pem/aosp_ec.pem")
-    aosp_rsa_public_key = load_public_key_from_file("pem/aosp_rsa.pem")
-    knox_public_key = load_public_key_from_file("pem/knox.pem")
+    # 加载预置的公钥
+    google_public_key = load_public_key_from_file(PUBLIC_KEYS["google"])
+    aosp_ec_public_key = load_public_key_from_file(PUBLIC_KEYS["aosp_ec"])
+    aosp_rsa_public_key = load_public_key_from_file(PUBLIC_KEYS["aosp_rsa"])
+    knox_public_key = load_public_key_from_file(PUBLIC_KEYS["knox"])
 
     # 根公钥验证逻辑
-    if compare_keys(root_public_key, google_public_key):
-        pass
-    elif compare_keys(root_public_key, aosp_ec_public_key):
-        return False
-    elif compare_keys(root_public_key, aosp_rsa_public_key):
-        return False
-    elif compare_keys(root_public_key, knox_public_key):
-        print("Found a knox key !?")
+    trusted_keys = {
+        "google": google_public_key,
+        "aosp_ec": aosp_ec_public_key,
+        "aosp_rsa": aosp_rsa_public_key,
+        "knox": knox_public_key,
+    }
+
+    for key_name, public_key in trusted_keys.items():
+        if compare_keys(root_public_key, public_key):
+            if key_name == "knox":
+                print("Found a knox key !?")
+            elif key_name in ["aosp_ec", "aosp_rsa"]:
+                return False
+            break
     else:
         return False
 
     # 验证证书撤销状态
     serial_number_string = hex(certificate.serial_number)[2:].lower()
-    status = status_json["entries"].get(serial_number_string, None)
-    if status is not None:
+    if status_json.get("entries", {}).get(serial_number_string):
         return False
 
     # 如果所有检查通过，则返回 True
