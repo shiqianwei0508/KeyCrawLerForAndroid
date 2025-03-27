@@ -20,7 +20,7 @@ proxies = {
 }
 
 try:
-    response = requests.get("https://api.github.com", proxies=proxies, timeout=10)
+    response = requests.get("https://www.youtube.com", proxies=proxies, timeout=10)
     print(response.status_code)
 except requests.exceptions.RequestException as e:
     print(f"Proxy test failed: {e}")
