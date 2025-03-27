@@ -27,15 +27,11 @@ if HTTP_PROXY and HTTPS_PROXY:
     print(f'HTTP_PROXY: {HTTP_PROXY}')
     print(f'HTTPS_PROXY: {HTTPS_PROXY}')
 
-if not GITHUB_TOKEN:
-    raise ValueError("GITHUB_TOKEN is not set in the .env file")
-
 session = requests.Session()
 session.proxies = {
     "http": HTTP_PROXY,
     "https": HTTPS_PROXY,
 }
-session.timeout = 10  # Specify timeout (e.g., 10 seconds)
 
 # Search query
 search_query = "<AndroidAttestation>"
@@ -55,20 +51,28 @@ if not cache_file.exists():
     cache_file.touch()  # Create an empty file
 cached_urls = set(cache_file.read_text().splitlines())
 
+def process_and_save_xml(raw_url, file_content, saved_keys_dir):
+    try:
+        root = etree.fromstring(file_content)
+        canonical_xml = etree.tostring(root, method="c14n")
+        hash_value = hashlib.sha256(canonical_xml).hexdigest()
+        file_name_save = saved_keys_dir / f"{hash_value}.xml"
+        if not file_name_save.exists() and file_content and CheckValid(file_content):
+            print(f"{raw_url} is new")
+            with open(file_name_save, "wb") as f:
+                f.write(file_content)
+    except etree.XMLSyntaxError:
+        pass
 
 # Function to fetch and print search results
 def fetch_and_process_results(page):
     params = {"per_page": 100, "page": page}
-    # response = session.get(search_url, headers=headers, params=params)
+
     try:
-        response = session.get(search_url, headers=headers, params=params)
+        response = session.get(search_url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
-    except requests.exceptions.Timeout:
-        print("Connection timed out. Proxy may not be reachable.")
-    except requests.exceptions.ProxyError as e:
-        print(f"Proxy error: {e}")
     except requests.exceptions.RequestException as e:
-        print(f"Error occurred: {e}")
+        print(f"Request error: {e}")
 
     if response.status_code != 200:
         raise RuntimeError(f"Failed to retrieve search results: {response.status_code}")
@@ -85,27 +89,15 @@ def fetch_and_process_results(page):
                 # print(f'raw_url: {raw_url}')
 
                 # check if the file exists in cache
-                if raw_url + "\n" in cached_urls:
+                if raw_url in cached_urls:
                     continue
                 else:
-                    cached_urls.add(raw_url + "\n")
+                    cached_urls.add(raw_url)  # 保留原始 URL
 
                 # Fetch the file content
                 file_content = fetch_file_content(raw_url)
-                # Parse the XML
-                try:
-                    root = etree.fromstring(file_content)
-                except etree.XMLSyntaxError:
-                    continue
-                # Get the canonical form (C14N)
-                canonical_xml = etree.tostring(root, method="c14n")
-                # Hash the canonical XML
-                hash_value = hashlib.sha256(canonical_xml).hexdigest()
-                file_name_save = savedKeys / (hash_value + ".xml")
-                if not file_name_save.exists() and file_content and CheckValid(file_content):
-                    print(f"{raw_url} is new")
-                    with open(file_name_save, "wb") as f:
-                        f.write(file_content)
+
+                process_and_save_xml(raw_url, file_content, savedKeys)
     return len(search_results["items"]) > 0  # Return True if there could be more results
 
 
@@ -127,8 +119,7 @@ while has_more:
 
 # 更新缓存文件，直接写入集合中的内容
 with open(cache_file, "w") as cache:
-    cache.writelines(cached_urls)
-
+    cache.writelines(f"{url}\n" for url in cached_urls)  # 这里添加换行符
 
 for file_path in savedKeys.glob("*.xml"):
     print(f'Begin to CheckValid: {file_path}')
@@ -136,11 +127,8 @@ for file_path in savedKeys.glob("*.xml"):
 
     # 遍历文件并检查其有效性
     if not CheckValid(file_content):
-        try:
-            file_path.unlink()  # 自动删除无效文件
-            print(f"Deleted invalid file: {file_path.name}")
-        except OSError as e:
-            print(f"Error deleting file {file_path.name}: {e}")
+        file_path.unlink()  # 自动删除无效文件
+        print(f"Deleted invalid file: {file_path.name}")
     else:
         # 对有效文件进行打印
         print(f"Valid file: {file_path.name}")
