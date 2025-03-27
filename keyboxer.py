@@ -47,8 +47,6 @@ if not cache_file.exists():
     cache_file.touch()  # Create an empty file
 cached_urls = set(cache_file.read_text().splitlines())
 
-# cached_urls = set(open(cache_file, "r").readlines())
-
 
 # Function to fetch and print search results
 def fetch_and_process_results(page):
@@ -115,8 +113,10 @@ while has_more:
     has_more = fetch_and_process_results(page)
     page += 1
 
-# update cache
-open(cache_file, "w").writelines(cached_urls)
+# 更新缓存文件，直接写入集合中的内容
+with open(cache_file, "w") as cache:
+    cache.writelines(cached_urls)
+
 
 for file_path in save.glob("*.xml"):
     file_content = file_path.read_text()  # Read file content as a string
